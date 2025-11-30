@@ -7,11 +7,12 @@ A Python application for visualizing Formula 1 race telemetry and replaying race
 ## Features
 
 - **Race Replay Visualization:** Watch the race unfold with real-time driver positions on a rendered track.
-- **Leaderboard:** See live driver positions and gaps to the car ahead.
+- **Leaderboard:** See live driver positions and current tyre compounds.
 - **Lap & Time Display:** Track the current lap and total race time.
 - **Driver Status:** Drivers who retire or go out are marked as "OUT" on the leaderboard.
 - **Interactive Controls:** Pause, rewind, fast forward, and adjust playback speed using on-screen buttons or keyboard shortcuts.
 - **Legend:** On-screen legend explains all controls.
+- **Driver Telemetry Insights:** View speed, gear, DRS status, and current lap for selected drivers when selected on the leaderboard.
 
 ## Controls
 
@@ -32,6 +33,8 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+FastF1 cache folder will be created automatically on first run. If it is not created, you can manually create a folder named `.fastf1-cache` in the project root.
+
 ## Usage
 
 Run the main script and specify the year and round:
@@ -47,6 +50,7 @@ python main.py --year 2025 --round 12 --refresh-data
 ## File Structure
 
 - `main.py` — Entry point, handles session loading and starts the replay.
+- `src/lib/tyres.py` — Type definitions for telemetry data structures.
 - `src/f1_data.py` — Telemetry loading, processing, and frame generation.
 - `src/arcade_replay.py` — Visualization and UI logic.
 
