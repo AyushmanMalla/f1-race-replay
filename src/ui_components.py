@@ -335,15 +335,18 @@ class LeaderboardComponent(BaseComponent):
                 icon_size = 16
                 rect = arcade.XYWH(tyre_icon_x, tyre_icon_y, icon_size, icon_size)
 
-                # Tyre health ratio
-                current_life = pos.get("tyre_life", 0)
-                max_life = getattr(window, "max_tyre_life", {}).get(int(tyre_val), 30)
-                tyre_health_ratio = max(0.0, min(1.0, 1.0 - (current_life / max_life)))
+                tyre_health_ratio = 1.0
+                if window.degradation_integrator:
+                    idx = min(int(window.frame_index), len(window.frames) - 1)
+                    health_data = window.degradation_integrator.get_health_for_frame(code, window.frames[idx])
+                    if health_data:
+                        tyre_health_ratio = health_data['health'] / 100.0
+                else:
+                    current_life = pos.get("tyre_life", 0)
+                    max_life = getattr(window, "max_tyre_life", {}).get(int(tyre_val), 30)
+                    tyre_health_ratio = max(0.0, min(1.0, 1.0 - (current_life / max_life)))
 
-                # Background: Darkened icon
                 arcade.draw_texture_rect(rect=rect, texture=tyre_texture, alpha=80)
-
-                # Foreground: Clipped icon according to tyre health ratio
                 bright_height = icon_size * tyre_health_ratio
                 if bright_height > 0:
                     window.ctx.scissor = (int(tyre_icon_x - 8), int(tyre_icon_y - 8), 16, int(bright_height))
