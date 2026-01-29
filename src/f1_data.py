@@ -50,6 +50,7 @@ def _process_single_driver(args):
     rel_dist_all = []
     lap_numbers = []
     tyre_compounds = []
+    tyre_life_all = []
     speed_all = []
     gear_all = []
     drs_all = []
@@ -64,6 +65,7 @@ def _process_single_driver(args):
         lap_tel = lap.get_telemetry()
         lap_number = lap.LapNumber
         tyre_compund_as_int = get_tyre_compound_int(lap.Compound)
+        tyre_life = lap.TyreLife if pd.notna(lap.TyreLife) else 0
 
         if lap_tel.empty:
             continue
@@ -89,6 +91,7 @@ def _process_single_driver(args):
         rel_dist_all.append(rd_lap)
         lap_numbers.append(np.full_like(t_lap, lap_number))
         tyre_compounds.append(np.full_like(t_lap, tyre_compund_as_int))
+        tyre_life_all.append(np.full_like(t_lap, tyre_life))
         speed_all.append(speed_kph_lap)
         gear_all.append(gear_lap)
         drs_all.append(drs_lap)
@@ -99,59 +102,19 @@ def _process_single_driver(args):
         return None
 
     # Concatenate all arrays at once for better performance
-    all_arrays = [
-        t_all,
-        x_all,
-        y_all,
-        race_dist_all,
-        rel_dist_all,
-        lap_numbers,
-        tyre_compounds,
-        speed_all,
-        gear_all,
-        drs_all,
-    ]
-
-    (
-        t_all,
-        x_all,
-        y_all,
-        race_dist_all,
-        rel_dist_all,
-        lap_numbers,
-        tyre_compounds,
-        speed_all,
-        gear_all,
-        drs_all,
-    ) = [np.concatenate(arr) for arr in all_arrays]
+    all_arrays = [t_all, x_all, y_all, race_dist_all, rel_dist_all, 
+                  lap_numbers, tyre_compounds, tyre_life_all, speed_all, gear_all, drs_all]
+    
+    t_all, x_all, y_all, race_dist_all, rel_dist_all, lap_numbers, \
+    tyre_compounds, tyre_life_all, speed_all, gear_all, drs_all = [np.concatenate(arr) for arr in all_arrays]
 
     # Sort all arrays by time in one operation
     order = np.argsort(t_all)
-    all_data = [
-        t_all,
-        x_all,
-        y_all,
-        race_dist_all,
-        rel_dist_all,
-        lap_numbers,
-        tyre_compounds,
-        speed_all,
-        gear_all,
-        drs_all,
-    ]
-
-    (
-        t_all,
-        x_all,
-        y_all,
-        race_dist_all,
-        rel_dist_all,
-        lap_numbers,
-        tyre_compounds,
-        speed_all,
-        gear_all,
-        drs_all,
-    ) = [arr[order] for arr in all_data]
+    all_data = [t_all, x_all, y_all, race_dist_all, rel_dist_all, 
+                lap_numbers, tyre_compounds, tyre_life_all, speed_all, gear_all, drs_all]
+    
+    t_all, x_all, y_all, race_dist_all, rel_dist_all, lap_numbers, \
+    tyre_compounds, tyre_life_all, speed_all, gear_all, drs_all = [arr[order] for arr in all_data]
 
     throttle_all = np.concatenate(throttle_all)[order]
     brake_all = np.concatenate(brake_all)[order]
@@ -168,6 +131,7 @@ def _process_single_driver(args):
             "rel_dist": rel_dist_all,
             "lap": lap_numbers,
             "tyre": tyre_compounds,
+            "tyre_life": tyre_life_all,
             "speed": speed_all,
             "gear": gear_all,
             "drs": drs_all,
@@ -272,6 +236,7 @@ def get_race_telemetry(session, session_type="R"):
 
     # 3. Resample each driver's telemetry (x, y, gap) onto the common timeline
     resampled_data = {}
+    max_tyre_life_map = {}
 
     for code, data in driver_data.items():
         t = data["t"] - global_t_min  # Shift
@@ -288,6 +253,7 @@ def get_race_telemetry(session, session_type="R"):
             data["rel_dist"][order],
             data["lap"][order],
             data["tyre"][order],
+            data["tyre_life"][order],
             data["speed"][order],
             data["gear"][order],
             data["drs"][order],
@@ -296,20 +262,9 @@ def get_race_telemetry(session, session_type="R"):
         ]
 
         resampled = [np.interp(timeline, t_sorted, arr) for arr in arrays_to_resample]
-        (
-            x_resampled,
-            y_resampled,
-            dist_resampled,
-            rel_dist_resampled,
-            lap_resampled,
-            tyre_resampled,
-            speed_resampled,
-            gear_resampled,
-            drs_resampled,
-            throttle_resampled,
-            brake_resampled,
-        ) = resampled
-
+        x_resampled, y_resampled, dist_resampled, rel_dist_resampled, lap_resampled, \
+        tyre_resampled, tyre_life_resampled, speed_resampled, gear_resampled, drs_resampled, throttle_resampled, brake_resampled = resampled
+ 
         resampled_data[code] = {
             "t": timeline,
             "x": x_resampled,
@@ -318,12 +273,19 @@ def get_race_telemetry(session, session_type="R"):
             "rel_dist": rel_dist_resampled,
             "lap": lap_resampled,
             "tyre": tyre_resampled,
+            "tyre_life": tyre_life_resampled,
             "speed": speed_resampled,
             "gear": gear_resampled,
             "drs": drs_resampled,
             "throttle": throttle_resampled,
             "brake": brake_resampled,
         }
+
+        for t_int in np.unique(tyre_resampled):
+            mask = tyre_resampled == t_int
+            c_max = np.nanmax(tyre_life_resampled[mask])
+            if not np.isnan(c_max):
+                max_tyre_life_map[int(t_int)] = max(max_tyre_life_map.get(int(t_int), 1), int(c_max))
 
     # 4. Incorporate track status data into the timeline (for safety car, VSC, etc.)
 
@@ -410,22 +372,21 @@ def get_race_telemetry(session, session_type="R"):
         snapshot = []
         for code in driver_codes:
             d = driver_arrays[code]
-            snapshot.append(
-                {
-                    "code": code,
-                    "dist": float(d["dist"][i]),
-                    "x": float(d["x"][i]),
-                    "y": float(d["y"][i]),
-                    "lap": int(round(d["lap"][i])),
-                    "rel_dist": float(d["rel_dist"][i]),
-                    "tyre": float(d["tyre"][i]),
-                    "speed": float(d["speed"][i]),
-                    "gear": int(d["gear"][i]),
-                    "drs": int(d["drs"][i]),
-                    "throttle": float(d["throttle"][i]),
-                    "brake": float(d["brake"][i]),
-                }
-            )
+            snapshot.append({
+                "code": code,
+                "dist": float(d["dist"][i]),
+                "x": float(d["x"][i]),
+                "y": float(d["y"][i]),
+                "lap": int(round(d["lap"][i])),
+                "rel_dist": float(d["rel_dist"][i]),
+                "tyre": float(d["tyre"][i]),
+                "tyre_life": float(d["tyre_life"][i]),
+                "speed": float(d['speed'][i]),
+                "gear": int(d['gear'][i]),
+                "drs": int(d['drs'][i]),
+                "throttle": float(d['throttle'][i]),
+                "brake": float(d['brake'][i]),
+            })
 
         # If for some reason we have no drivers at this instant
         if not snapshot:
@@ -455,6 +416,7 @@ def get_race_telemetry(session, session_type="R"):
                 "lap": car["lap"],
                 "rel_dist": round(car["rel_dist"], 4),
                 "tyre": car["tyre"],
+                "tyre_life": car["tyre_life"],
                 "position": position,
                 "speed": car["speed"],
                 "gear": car["gear"],
@@ -506,16 +468,13 @@ def get_race_telemetry(session, session_type="R"):
 
     # Save using pickle (10-100x faster than JSON)
     with open(f"computed_data/{event_name}_{cache_suffix}_telemetry.pkl", "wb") as f:
-        pickle.dump(
-            {
-                "frames": frames,
-                "driver_colors": get_driver_colors(session),
-                "track_statuses": formatted_track_statuses,
-                "total_laps": int(max_lap_number),
-            },
-            f,
-            protocol=pickle.HIGHEST_PROTOCOL,
-        )
+        pickle.dump({
+            "frames": frames,
+            "driver_colors": get_driver_colors(session),
+            "track_statuses": formatted_track_statuses,
+            "total_laps": int(max_lap_number),
+            "max_tyre_life": max_tyre_life_map,
+        }, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     print("Saved Successfully!")
     print("The replay should begin in a new window shortly")
@@ -524,6 +483,7 @@ def get_race_telemetry(session, session_type="R"):
         "driver_colors": get_driver_colors(session),
         "track_statuses": formatted_track_statuses,
         "total_laps": int(max_lap_number),
+        "max_tyre_life": max_tyre_life_map,
     }
 
 
