@@ -3,3 +3,7 @@ pandas
 matplotlib
 numpy
 arcade
+pyglet
+pyside6
+questionary
+rich
